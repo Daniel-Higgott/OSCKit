@@ -85,7 +85,11 @@ public class OSCUdpClient: NSObject {
     /// This allows for a reference to a sent packet when the
     /// GCDAsyncUDPSocketDelegate method udpSocket(_:didSendDataWithTag:) is called.
     private var tag: Int = 0
-
+    
+    /// A lock used to avoid a race condition when accessing sendingPackets
+    
+    private let lock = NSLock()
+    
     /// An OSC UDP Client.
     /// - Parameters:
     ///   - configuration: A configuration object that defines the behavior of a UDP client.
@@ -177,6 +181,11 @@ public class OSCUdpClient: NSObject {
             // Port 0 means that the OS should choose a random ephemeral port for this socket.
             try socket.bind(toPort: 0, interface: interface)
         }
+        
+        
+        lock.lock()
+        defer {lock.unlock()}
+        
         sendingPackets[tag] = OSCSentPacket(host: socket.localHost(),
                                             port: socket.localPort(),
                                             packet: packet)
@@ -196,6 +205,10 @@ extension OSCUdpClient: GCDAsyncUdpSocketDelegate {
 
     public func udpSocket(_ sock: GCDAsyncUdpSocket,
                           didSendDataWithTag tag: Int) {
+        
+        lock.lock()
+        defer {lock.unlock()}
+        
         guard let sentPacket = sendingPackets[tag] else { return }
         sendingPackets[tag] = nil
         delegate?.client(self,
@@ -207,6 +220,10 @@ extension OSCUdpClient: GCDAsyncUdpSocketDelegate {
     public func udpSocket(_ sock: GCDAsyncUdpSocket,
                           didNotSendDataWithTag tag: Int,
                           dueToError error: Error?) {
+        
+        lock.lock()
+        defer {lock.unlock()}
+        
         guard let sentPacket = sendingPackets[tag] else { return }
         sendingPackets[tag] = nil
         delegate?.client(self,
@@ -219,6 +236,10 @@ extension OSCUdpClient: GCDAsyncUdpSocketDelegate {
     public func udpSocketDidClose(_ sock: GCDAsyncUdpSocket,
                                   withError error: Error?) {
         guard let error = error else { return }
+        
+        lock.lock()
+        defer {lock.unlock()}
+        
         sendingPackets.removeAll()
         delegate?.client(self, socketDidCloseWithError: error)
     }
