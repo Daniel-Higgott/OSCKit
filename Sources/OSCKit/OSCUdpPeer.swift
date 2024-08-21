@@ -108,6 +108,10 @@ public class OSCUdpPeer: NSObject {
     /// This allows for a reference to a sent packet when the
     /// GCDAsyncUDPSocketDelegate method udpSocket(_:didSendDataWithTag:) is called.
     private var tag: Int = 0
+    
+    /// A lock used to avoid a race condition when accessing sendingPackets
+    
+    private let lock = NSLock()
 
     /// The dispatch queue that the peer executes all delegate callbacks on.
     private let queue: DispatchQueue
@@ -242,6 +246,10 @@ public class OSCUdpPeer: NSObject {
     /// Therefore by passing it into this function allows for us to not calculate it
     /// once more when send(_:Data) is called.
     private func send(packet: OSCPacket, with data: Data) throws {
+        
+        lock.lock()
+        defer {lock.unlock()}
+        
         sendingPackets[tag] = OSCSentPacket(host: socket.localHost(),
                                             port: socket.localPort(),
                                             packet: packet)
@@ -290,6 +298,10 @@ extension OSCUdpPeer: GCDAsyncUdpSocketDelegate {
     }
     
     public func udpSocket(_ sock: GCDAsyncUdpSocket, didSendDataWithTag tag: Int) {
+        
+        lock.lock()
+        defer {lock.unlock()}
+        
         guard let sentPacket = sendingPackets[tag] else { return }
         sendingPackets[tag] = nil
         if OSCKit.listening(for: sentPacket.packet) {
@@ -301,6 +313,10 @@ extension OSCUdpPeer: GCDAsyncUdpSocketDelegate {
     }
 
     public func udpSocket(_ sock: GCDAsyncUdpSocket, didNotSendDataWithTag tag: Int, dueToError error: Error?) {
+        
+        lock.lock()
+        defer {lock.unlock()}
+        
         guard let sentPacket = sendingPackets[tag] else { return }
         sendingPackets[tag] = nil
         if OSCKit.listening(for: sentPacket.packet) {
